@@ -84,4 +84,4 @@ mod tests {
         assert_eq!(quote.spread(), dec!(1.00));
         assert_eq!(quote.mid_price(), dec!(150.50));
     }
-}                       ´
+}                      
