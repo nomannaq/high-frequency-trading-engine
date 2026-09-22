@@ -42,6 +42,7 @@ pub struct Order {
     pub updated_at: DateTime<Utc>,
 
 }
+
 impl Order {
     pub fn new(
         symbol: String,
@@ -52,38 +53,86 @@ impl Order {
         stop_price: Option<Decimal>,
         user_id: Uuid,
     ) -> Self {
-        let now= Utc::now();
+        let now = Utc::now();
         Self {
-            id: Uuid:: new_v4(),
+            id: Uuid::new_v4(),
             symbol,
             side,
             order_type,
             quantity,
+            filled_quantity: Decimal::ZERO,
             price,
             stop_price,
             status: OrderStatus::Pending,
-            timestamp: Default::default(),
+            timestamp: now,
             user_id,
-            updated_at: Default::default(),
+            updated_at: now,
         }
     }
+
     pub fn is_fully_filled(&self) -> bool {
-        self.quantity == Decimal::zero()
+        self.filled_quantity >= self.quantity
     }
+
     pub fn remaining_quantity(&self) -> Decimal {
-        self.quantity.abs()
+        self.quantity - self.filled_quantity
     }
+
     pub fn fill(&mut self, quantity: Decimal) {
-        self.filled_quantity += quantity;
-        self.quantity -= quantity;
+        if quantity <= Decimal::ZERO {
+            return;
+        }
+
+        let remaining = self.remaining_quantity();
+        let actual_fill = if quantity > remaining {
+            remaining
+        } else {
+            quantity
+        };
+
+        self.filled_quantity += actual_fill;
+        self.updated_at = Utc::now();
 
         if self.is_fully_filled() {
             self.status = OrderStatus::Filled;
-        }
-        else {
+        } else {
             self.status = OrderStatus::PartiallyFilled;
         }
     }
 
+    pub fn cancel(&mut self) {
+        self.status = OrderStatus::Cancelled;
+        self.updated_at = Utc::now();
+    }
 
+    pub fn reject(&mut self) {
+        self.status = OrderStatus::Rejected;
+        self.updated_at = Utc::now();
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.quantity <= Decimal::ZERO {
+            return Err("Quantity must be positive".to_string());
+        }
+
+        match self.order_type {
+            OrderType::Limit | OrderType::StopLimit => {
+                if self.price <= Decimal::ZERO {
+                    return Err("Limit orders must have a positive price".to_string());
+                }
+            }
+            _ => {}
+        }
+
+        match self.order_type {
+            OrderType::StopLoss | OrderType::StopLimit => {
+                if self.stop_price.is_none() || self.stop_price.unwrap() <= Decimal::ZERO {
+                    return Err("Stop orders must have a positive stop price".to_string());
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
 }
